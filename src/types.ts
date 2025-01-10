@@ -1,36 +1,38 @@
-// types.ts (oppure in cima a datasource.ts)
-import { DataSourceJsonData, DataQuery } from '@grafana/data';
+// src/types.ts
+
+import { DataSourceJsonData, DataQuery, DataSourceInstanceSettings } from '@grafana/data';
 
 /**
- * SWISQuery: descrive la singola query
+ * Descrive i campi di una singola query (ex: rawSql, format, ecc.)
  */
 export interface SWISQuery extends DataQuery {
-  /**
-   * SWQL o query definita dall’utente
-   */
   rawSql?: string;
-
-  /**
-   * Formato: 'time_series', 'table', 'search', 'annotation', ecc.
-   */
-  format?: string;
-
-  /**
-   * Metadati che popoliamo dopo uno schema request (opzionale)
-   */
+  format?: 'time_series' | 'table' | 'annotation' | 'search';
   metadata?: any;
+  intervalMs?: any;
 }
 
 /**
- * Opzioni di configurazione del data source (baseUrl, ecc.)
+ * Opzioni non-segrete (jsonData)
  */
 export interface SWISDataSourceOptions extends DataSourceJsonData {
   baseUrl?: string;
+  timeout?: number;
+  basicAuth?: boolean;
+  user?: string;
+  password?: string;
 }
 
-// types.ts
+/**
+ * Opzioni segrete (secureJsonData)
+ */
 export interface SWISSecureJsonData {
   password?: string;
-  apiKey?: string;
-  // qualunque campo "segreto" ti serva
+}
+
+/**
+ * Estensione di DataSourceInstanceSettings per aggiungere secureJsonData.
+ */
+export interface SwisDataSourceInstanceSettings extends DataSourceInstanceSettings<SWISDataSourceOptions> {
+  secureJsonData?: SWISSecureJsonData;
 }
