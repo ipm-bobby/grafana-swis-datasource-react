@@ -1,0 +1,27 @@
+{
+  "type": "datasource",
+  "id": "etichy-grafana-swis-datasource",
+  "name": "SWIS DataSource (React)",
+  "info": {
+    "description": "Data source plugin for SolarWinds SWIS (React-based version)",
+    "author": {
+      "name": "Roberto Di Giorgio"
+    },
+    "keywords": ["swis", "solarwinds", "react"],
+    "logos": {
+      "small": "img/solarwinds-icon.svg",
+      "large": "img/solarwinds-icon.svg"
+    },
+    "screenshots": [],
+    "version": "2.0.0",
+    "updated": "2025-01-12"
+  },
+  "includes": [
+    {
+      "type": "datasource",
+      "name": "SWIS Data Source",
+      "component": "datasource"
+    }
+  ],
+  "module": "dist/module.js"
+}
