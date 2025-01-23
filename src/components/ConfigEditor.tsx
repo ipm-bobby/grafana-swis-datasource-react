@@ -95,7 +95,7 @@ export const ConfigEditor: React.FC<Props> = ({ options, onOptionsChange }) => {
             <InlineField label="Password" labelWidth={12}>
               <SecretInput
                 width={30}
-                isConfigured={(jsonData?.password && jsonData?.password?.length >= 8) || false}
+                isConfigured={(jsonData?.password && jsonData?.password?.length >= 30) || false}
                 value={jsonData?.password || ''}
                 placeholder="password"
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
