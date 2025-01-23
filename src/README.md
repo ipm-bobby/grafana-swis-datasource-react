@@ -85,7 +85,7 @@ ORDER BY time DESC
 3. Because this plugin is not signed, you need to add exception into your grafana configuration. Navigate to grafana folder /conf/defaults.ini and find option _allow_loading_unsigned_plugins_ which has to be equal
 
 ```
-allow_loading_unsigned_plugins = solarwinds-swis-datasource
+allow_loading_unsigned_plugins = solarwinds-swis-react-datasource
 ```
 
 3. Restart the Grafana server
