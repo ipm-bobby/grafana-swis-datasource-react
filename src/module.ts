@@ -1,8 +1,11 @@
 import { DataSourcePlugin } from '@grafana/data';
-import { SwisDataSource } from './datasource';
+import { SwisDatasource } from './datasource';
 import { ConfigEditor } from './components/ConfigEditor';
-import { SWISQuery, SWISDataSourceOptions } from './types';
+import { QueryEditor } from './components/QueryEditor';
+import { AnnotationQueryEditor } from './components/AnnotationQueryEditor';
+import { SwisQuery, SwisDataSourceOptions } from './types';
 
-export const plugin = new DataSourcePlugin<SwisDataSource, SWISQuery, SWISDataSourceOptions>(
-  SwisDataSource
-).setConfigEditor(ConfigEditor);
+export const plugin = new DataSourcePlugin<SwisDatasource, SwisQuery, SwisDataSourceOptions>(SwisDatasource)
+  .setConfigEditor(ConfigEditor)
+  .setQueryEditor(QueryEditor)
+  .setAnnotationQueryCtrl(AnnotationQueryEditor);

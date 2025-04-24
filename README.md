@@ -1,90 +1,57 @@
-# SolarWinds SWIS DataSource based on Simple JSON Datasource
+# Grafana SolarWinds SWIS DataSource
 
-SWIS (SolarWinds Information Service) uses SWQL language - [learn more](https://github.com/solarwinds/OrionSDK/wiki/About-SWIS)
+DataSource plugin for SolarWinds via SWIS HTTP REST endpoint. This is a React version of the plugin created to support Grafana 10+ which no longer supports AngularJS plugins.
 
-DataSource connects to SWIS HTTP REST endpoint. As URl specify SWIS HTTP endpoint address which is by default
+## Features
 
-- https://orionservername:17778/SolarWinds/InformationService/v3/Json/
+- **Connect to SolarWinds**: Connect to SolarWinds monitoring using the SWIS (SolarWinds Information Service) HTTP REST endpoint
+- **Write SWQL Queries**: Use SolarWinds Query Language (SWQL) to query your SolarWinds data
+- **Time Series & Table Formats**: Display data as time series graphs or tables
+- **Template Variables**: Support for Grafana template variables for dynamic dashboards
+- **Annotations**: Create annotations from SolarWinds data
 
-Unfortunately this endpoint doesn't support CORS so we can connect only via Server(default)
-and due to self-signed certificate we need to check option 'Skip TLS Verify'. Anonymous connection
-is not permited so you need to fill in your orion account credentials.
+## Configuration
 
-![Connection example](src/docs/img/datasource_connect.jpg)
+1. Add a new SolarWinds SWIS datasource in Grafana
+2. Set the URL to the SWIS endpoint (default: `https://localhost:17778/SolarWinds/InformationService/v3/Json/`)
+3. Configure authentication (basic auth)
+4. Save and test the connection
 
-# SWIS query language
+## Query Editor
 
-SWQL language is proprietal solarwinds query language to get data from all their data sources, [learn more](https://github.com/solarwinds/OrionSDK/wiki/About-SWIS)
+The query editor supports writing SWQL queries with the following features:
 
-## Time Series:
+- **Format**: Choose between Time Series and Table formats
+- **Time Range Variables**: Use `$from` and `$to` to inject Grafana time range into your queries
+- **Downsampling**: Use the `downsample()` function for time-series aggregation
 
-For time series data there are these conditions.
+### Example Queries
 
-1. There has to be time column
-2. There has to be string column to define metric name
-3. There has to be value column(s), in case more columns are specified we will add suffix to metric name.
-4. Data must be ordered by time
-
-## Table:
-
-- No restriction to data queries
-
-Grafana macros available to use:
-
-- $from - time interval start
-- $to - time interval end
-- $\_\_interval - interval length for sampling
-
-## Time Sampling:
-
-- For sampling you must use function downsample([timecolumn]). Sampling interval is used automaticaly from variable $\_\_interval
-
-## Variable queries:
-
-- you need to define **text (manadatory) and **value columns:
-
-```sql
-  SELECT Caption as __text, NodeID as __value FROM Orion.Nodes
-```
-
-Variables are used in query via its name with prefix $.
-
-```sql
-  SELECT .... FROM ... WHERE .... AND NodeID IN ($Node)
-```
-
-## For annotation queries:
-
-- you need to specify datetime column (mandatory) and then you can set text and tags columns
-
-```sql
-  SELECT EventTime as time, Message as text, s.EventTypeProperties.Name as tags
-  FROM Orion.Events s WHERE EventTime BETWEEN $from AND $to
-```
-
-Example of query with time sampling to display CPUload and memory per node:
-
+#### Time Series Query
 ```sql
 SELECT
-     downsample(ObservationTimeStamp) as time,
-     a.Node.Caption,
-     AVG(AvgLoad) as CpuLoad,
-     AVG(AvgMemoryUsed) as MemoryUsed
+    downsample(ObservationTimeStamp) as time,
+    a.Node.Caption,
+    AVG(AvgLoad) as CpuLoad,
+    AVG(AvgMemoryUsed) as MemoryUsed
 FROM Orion.CPULoad a
 WHERE ObservationTimeStamp BETWEEN $from AND $to
 GROUP BY downsample(ObservationTimeStamp), a.Node.Caption, a.NodeID
 ORDER BY time DESC
 ```
 
-## Installation Manually
-
-1. Download sources zip file.
-2. Extract the zip file into the data/plugins subdirectory for Grafana.
-3. Because this plugin is not signed, you need to add exception into your grafana configuration. Navigate to grafana folder /conf/defaults.ini and find option _allow_loading_unsigned_plugins_ which has to be equal
-
-```
-allow_loading_unsigned_plugins = solarwinds-swis-datasource
+#### Template Variable Query
+```sql
+SELECT Caption as __text, NodeID as __value FROM Orion.Nodes ORDER BY Caption
 ```
 
-3. Restart the Grafana server
-4. To make sure the plugin was installed, check the list of installed data sources.
+## Annotations
+
+For annotations, write a SWQL query that returns:
+- A `time` column (or any DateTime field)
+- A `text` column for annotation text
+- An optional `tags` column (comma-separated tags)
+
+## License
+
+Apache License 2.0

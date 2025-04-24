@@ -1,0 +1,14 @@
+.swis-query-editor-help {
+  margin-top: 10px;
+  margin-bottom: 10px;
+}
+
+.swis-code-editor {
+  margin-bottom: 10px;
+}
+
+.swis-query-error {
+  color: #e24d42;
+  margin-top: 10px;
+  margin-bottom: 10px;
+}

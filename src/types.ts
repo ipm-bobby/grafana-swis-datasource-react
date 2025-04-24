@@ -1,38 +1,42 @@
-// src/types.ts
+import { DataQuery, DataSourceJsonData } from '@grafana/data';
 
-import { DataSourceJsonData, DataQuery, DataSourceInstanceSettings } from '@grafana/data';
-
-/**
- * Descrive i campi di una singola query (ex: rawSql, format, ecc.)
- */
-export interface SWISQuery extends DataQuery {
-  rawSql?: string;
-  format?: 'time_series' | 'table' | 'annotation' | 'search';
-  metadata?: any;
-  intervalMs?: any;
+export interface SwisQuery extends DataQuery {
+  format: string;
+  rawSql: string;
+  refId: string;
 }
 
-/**
- * Opzioni non-segrete (jsonData)
- */
-export interface SWISDataSourceOptions extends DataSourceJsonData {
-  baseUrl?: string;
-  timeout?: number;
-  basicAuth?: boolean;
-  user?: string;
-  password?: string;
+export interface QueryMeta {
+  sql: string;
 }
 
-/**
- * Opzioni segrete (secureJsonData)
- */
-export interface SWISSecureJsonData {
-  password?: string;
+export const defaultQuery: Partial<SwisQuery> = {
+  format: 'time_series',
+  rawSql: `SELECT TOP 5
+     LastSync, 
+     Caption,
+     CPULoad, 
+     ResponseTime 
+FROM
+     Orion.Nodes`
+};
+
+export interface SwisDataSourceOptions extends DataSourceJsonData {
+  url?: string;
 }
 
-/**
- * Estensione di DataSourceInstanceSettings per aggiungere secureJsonData.
- */
-export interface SwisDataSourceInstanceSettings extends DataSourceInstanceSettings<SWISDataSourceOptions> {
-  secureJsonData?: SWISSecureJsonData;
+export interface SwisSecureJsonData {
+  basicAuth?: string;
+}
+
+export interface Column {
+  index: number;
+  name: string;
+  type: string;
+}
+
+export interface QueryMetadata {
+  timeColumnIndex: number;
+  metricIndex: number;
+  columns: Column[];
 }

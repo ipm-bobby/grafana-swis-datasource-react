@@ -1,37 +1,32 @@
 {
   "type": "datasource",
-  "id": "solarwinds-swis-react-datasource",
-  "name": "SolarWinds SWIS React",
+  "name": "SolarWinds SWIS DataSource",
+  "id": "solarwinds-swis-datasource",
+  "metrics": true,
+  "logs": false,
+  "annotations": true,
+  "alerting": true,
+  "backend": false,
   "info": {
-    "description": "Data source plugin for SolarWinds via SWIS HTTP REST endpoint",
-    "author": { "name": "Roberto Di Giorgio" },
+    "description": "DataSource plugin for SolarWinds via SWIS HTTP REST endpoint",
+    "author": {
+      "name": "Eduard Tichy"
+    },
+    "keywords": ["solarwinds", "swis", "datasource"],
     "logos": {
       "small": "img/solarwinds-icon.svg",
       "large": "img/solarwinds-icon.svg"
     },
-    "links": [],
-    "version": "2.0.0",
-    "updated": "2025-01-15"
+    "links": [
+      {"name": "GitHub", "url": "https://github.com/etichy/grafana-swis-datasource"},
+      {"name": "License", "url": "https://github.com/etichy/grafana-swis-datasource/blob/master/LICENSE"}
+    ],
+    "screenshots": [],
+    "version": "1.0.0",
+    "updated": "2025-04-24"
   },
-  "jsonData": {
-    "defaultUrl": "http://localhost:17778/SolarWinds/InformationService/v3/Json"
-  },
-  "secureJsonFields": {
-    "password": true
-  },
-  "secureJsonData": {
-    "password": ""
-  },
-  "includes": [
-    {
-      "type": "datasource",
-      "name": "SWIS DataSource",
-      "component": "datasource"
-    }
-  ],
-  "modules": [],
-  "module": "dist/module.js",
-  "metrics": true,
-  "annotations": true,
-  "alerting": false
+  "dependencies": {
+    "grafanaDependency": ">=10.0.0",
+    "plugins": []
+  }
 }
