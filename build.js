@@ -117,7 +117,7 @@ const moduleJs = `define(['react', 'react-dom', '@grafana/data', '@grafana/ui', 
   // Config editor - uses Grafana's built-in HTTP settings component
   function ConfigEditor(props) {
     return React.createElement(ui.DataSourceHttpSettings, {
-      defaultUrl: "https://localhost:17778/SolarWinds/InformationService/v3/Json/",
+      defaultUrl: "https://localhost:17774/SolarWinds/InformationService/v3/Json/",
       dataSourceConfig: props.options,
       onChange: props.onOptionsChange
     });

@@ -72,7 +72,7 @@ After installing the plugin:
 1. Navigate to Configuration > Data Sources in your Grafana instance
 2. Click "Add data source" and search for "SolarWinds SWIS React"
 3. Configure the data source:
-   - **URL**: Enter your SolarWinds Information Service (SWIS) endpoint (default: `https://localhost:17778/SolarWinds/InformationService/v3/Json/`)
+   - **URL**: Enter your SolarWinds Information Service (SWIS) endpoint (default: `https://localhost:17774/SolarWinds/InformationService/v3/Json/`)
    - **Authentication**: Configure Basic Auth with your SolarWinds credentials
    - **Skip TLS Verify**: Enable if your SWIS endpoint uses a self-signed certificate
 
