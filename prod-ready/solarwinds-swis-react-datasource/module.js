@@ -1,30 +1,4 @@
-const fs = require('fs');
-const path = require('path');
-const { exec } = require('child_process');
-
-// Ensure directories exist
-const dirs = ['dist', 'dist/img'];
-dirs.forEach(dir => {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-});
-
-// Copy static files
-const filesToCopy = [
-  { src: 'src/plugin.json', dest: 'dist/plugin.json' },
-  { src: 'src/img/solarwinds-icon.svg', dest: 'dist/img/solarwinds-icon.svg' },
-  { src: 'README.md', dest: 'dist/README.md' },
-  { src: 'LICENSE', dest: 'dist/LICENSE' }
-];
-
-filesToCopy.forEach(file => {
-  fs.copyFileSync(file.src, file.dest);
-  console.log(`Copied ${file.src} to ${file.dest}`);
-});
-
-// Create a basic module.js file
-const moduleJs = `define(['react', 'react-dom', '@grafana/data', '@grafana/ui', '@grafana/runtime'], function(React, ReactDOM, data, ui, runtime) {
+define(['react', 'react-dom', '@grafana/data', '@grafana/ui', '@grafana/runtime'], function(React, ReactDOM, data, ui, runtime) {
   'use strict';
   
   // This is a simplified version for testing
@@ -59,13 +33,13 @@ const moduleJs = `define(['react', 'react-dom', '@grafana/data', '@grafana/ui', 
         
         return {
           status: 'error',
-          message: \`Error connecting to SWIS: \${response.statusText}\`,
+          message: `Error connecting to SWIS: ${response.statusText}`,
           title: 'Error'
         };
       } catch (err) {
         return {
           status: 'error',
-          message: \`Error connecting to SWIS: \${err.message || 'Unknown error'}\`,
+          message: `Error connecting to SWIS: ${err.message || 'Unknown error'}`,
           title: 'Error'
         };
       }
@@ -128,13 +102,13 @@ const moduleJs = `define(['react', 'react-dom', '@grafana/data', '@grafana/ui', 
     const { query, onChange, onRunQuery } = props;
     
     // Default query
-    const q = query.rawSql || \`SELECT TOP 5
+    const q = query.rawSql || `SELECT TOP 5
      LastSync, 
      Caption,
      CPULoad, 
      ResponseTime 
 FROM
-     Orion.Nodes\`;
+     Orion.Nodes`;
     
     // Format options
     const formats = [
@@ -182,17 +156,4 @@ FROM
     .setQueryEditor(QueryEditor);
   
   return { plugin };
-});
-`;
-
-fs.writeFileSync('dist/module.js', moduleJs);
-console.log('Created dist/module.js');
-
-// Create a zip file of the dist directory
-exec('cd dist && zip -r ../solarwinds-swis-react-datasource.zip *', (error, stdout, stderr) => {
-  if (error) {
-    console.error(`Error creating zip: ${error}`);
-    return;
-  }
-  console.log(`Created solarwinds-swis-react-datasource.zip`);
 });

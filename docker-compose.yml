@@ -10,7 +10,7 @@ services:
       - GF_INSTALL_PLUGINS=
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
-      - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=solarwinds-swis-datasource
+      - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=solarwinds-swis-react-datasource
     volumes:
-      - ./dist:/var/lib/grafana/plugins/solarwinds-swis-datasource
+      - ./dist:/var/lib/grafana/plugins/solarwinds-swis-react-datasource
     restart: unless-stopped
