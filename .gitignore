@@ -6,6 +6,7 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
+# Dependencies
 node_modules/
 
 # Runtime data
@@ -20,11 +21,15 @@ lib-cov
 # Coverage directory used by tools like istanbul
 coverage
 
-# Compiled binary addons (https://nodejs.org/api/addons.html)
+# Build outputs
 dist/
 artifacts/
 work/
 ci/
+tmp/
+solarwinds-swis-react-datasource/
+solarwinds-swis-react-datasource.zip
+*.zip
 
 # e2e test directories
 /test-results/
@@ -35,5 +40,14 @@ ci/
 
 # Editor
 .idea
+.vscode
+*.swp
+*.swo
+*~
 
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Cache
 .eslintcache
