@@ -47,7 +47,25 @@ solarwinds-swis-react-datasource.zip
 
 # OS specific
 .DS_Store
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
 
 # Cache
 .eslintcache
+
+# Temporary files
+*.tmp
+*.temp
+
+# Common backup files
+*.bak
+*.backup
+*~
+
+# GitHub Actions
+.github/
