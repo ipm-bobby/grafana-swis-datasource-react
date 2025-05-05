@@ -12,7 +12,7 @@ import {
   VerticalGroup
 } from '@grafana/ui';
 import { SwisDatasource } from '../datasource';
-import { SwisDataSourceOptions, SwisQuery, defaultQuery } from '../types';
+import { SwisDataSourceOptions, SwisQuery, defaultQuery, getDefaultTableQuery } from '../types';
 import '../styles/QueryEditor.css';
 
 type Props = QueryEditorProps<SwisDatasource, SwisQuery, SwisDataSourceOptions>;
@@ -64,8 +64,11 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, data }: P
   
   // Panel type detection and default query setting (similar to Angular implementation)
   useEffect(() => {
+    console.log('Current query state in useEffect:', query);
+    
     // Initialize a clean query object with default values to prevent undefined errors
     const initQuery = () => {
+      // Get default format based on panel type - default to time_series if unknown
       const defaultFormat = data?.request?.targets[0]?.grafana?.panel?.type === 'table' ? 'table' : 'time_series';
       
       // Ensure all required fields have values to prevent "undefined" errors
@@ -80,34 +83,45 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, data }: P
       onChange(newQuery);
     };
     
-    // Detect panel type and update format accordingly
-    const isTablePanel = data?.request?.targets[0]?.grafana?.panel?.type === 'table';
+    // Always ensure the format is explicitly set
+    if (query.format === undefined) {
+      console.log('Format is undefined, initializing with defaults');
+      initQuery();
+      return; // Skip further processing until next render with initialized values
+    }
     
-    if (isTablePanel && query.format !== 'table') {
-      // Update format for table panel
+    // If the query exists but has issues with 'DESCSELECT' or other trailing content, clean it up
+    if (typeof query.rawSql === 'string' && query.rawSql.includes('DESCSELECT')) {
+      console.log('Found DESCSELECT issue in query, cleaning...');
+      const cleanedQuery = query.rawSql.replace(/DESC\s*SELECT/i, 'DESC');
+      onChange({
+        ...query,
+        rawSql: cleanedQuery,
+      });
+    }
+    
+  }, [data?.request?.targets]);
+  
+  // Separate useEffect for format changes via panel type
+  useEffect(() => {
+    // Skip if format is not yet defined
+    if (query.format === undefined) {
+      return;
+    }
+    
+    const isTablePanel = data?.request?.targets[0]?.grafana?.panel?.type === 'table';
+    const currentFormat = query.format;
+    
+    // Only update if there's a mismatch, to avoid loops
+    if (isTablePanel && currentFormat !== 'table') {
+      console.log('Panel is table but format is', currentFormat, ', updating to table');
       onChange({ ...query, format: 'table' });
-    } else if (!isTablePanel && query.format !== 'time_series') {
-      // Update format for time series panel
+    } else if (!isTablePanel && currentFormat !== 'time_series' && currentFormat !== 'table') {
+      // Only change if it's not specifically set to table (allow user override)
+      console.log('Panel is not table and format is', currentFormat, ', updating to time_series');
       onChange({ ...query, format: 'time_series' });
     }
-    
-    // Initialize the query if fields are missing
-    if (query.format === undefined || query.rawSql === undefined) {
-      initQuery();
-    } else {
-      // If the query exists but has issues with 'DESCSELECT' or other trailing content,
-      // clean it up during initialization
-      let cleanedQuery = query.rawSql;
-      if (typeof cleanedQuery === 'string' && cleanedQuery.includes('DESCSELECT')) {
-        console.log('Found DESCSELECT issue in query, cleaning...');
-        cleanedQuery = cleanedQuery.replace(/DESC\s*SELECT/i, 'DESC');
-        onChange({
-          ...query,
-          rawSql: cleanedQuery,
-        });
-      }
-    }
-  }, [data?.request?.targets]);
+  }, [query.format, data?.request?.targets]);
 
   const formats: Array<SelectableValue<string>> = [
     { label: 'Time series', value: 'time_series' },
@@ -116,8 +130,34 @@ export function QueryEditor({ query, onChange, onRunQuery, datasource, data }: P
 
   // Simple event handlers similar to Angular version
   const onFormatChange = (value: SelectableValue<string>) => {
-    onChange({ ...query, format: value.value || 'time_series' });
-    onRunQuery();
+    const newFormat = value.value || 'time_series';
+    console.log(`Format changing from ${query.format} to ${newFormat}`);
+    
+    // Force this value rather than going through the normal update
+    // to avoid any panel type detection logic overriding it
+    let updatedQuery: SwisQuery = { 
+      ...query, 
+      format: newFormat
+    };
+    
+    // If switching to table format and query is empty, provide a default table query
+    if (newFormat === 'table' && (!query.rawSql || query.rawSql.trim() === '')) {
+      const tableQuery = getDefaultTableQuery();
+      updatedQuery.rawSql = tableQuery.rawSql;
+    }
+    
+    // Ensure we're adding required fields to avoid undefined issues
+    if (!updatedQuery.refId) {
+      updatedQuery.refId = 'A';
+    }
+    
+    console.log(`Final query object after format change:`, updatedQuery);
+    onChange(updatedQuery);
+    
+    // Run the query with a slight delay to ensure state updates first
+    setTimeout(() => {
+      onRunQuery();
+    }, 50);
   };
 
   const onQueryBlur = () => {
@@ -236,11 +276,16 @@ ORDER BY time DESC"
           <InlineField label="Format as" labelWidth={16}>
             <Select
               options={formats}
-              value={formats.find(f => f.value === query.format)}
+              value={formats.find(f => f.value === query.format) || formats[0]}
               onChange={onFormatChange}
               width={16}
+              menuPlacement="bottom"
             />
           </InlineField>
+          {/* Debug display of current format */}
+          <div style={{ display: 'none' }}>
+            Current format: {query.format || 'undefined'}
+          </div>
 
           <Button
             variant="primary"

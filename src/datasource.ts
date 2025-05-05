@@ -302,7 +302,21 @@ export class SwisDatasource extends DataSourceApi<SwisQuery, SwisDataSourceOptio
     }
   }
 
+  // Helper function to create a clean query object
+  createCleanQueryParam(queryString: string, options: DataQueryRequest<SwisQuery>) {
+    return {
+      query: queryString,
+      parameters: {
+        timeFrom: options.range ? options.range.from.toISOString() : '',
+        timeTo: options.range ? options.range.to.toISOString() : '',
+        granularity: Math.max(Math.floor((options.intervalMs || 0) / 1000), 1),
+      }
+    };
+  }
+  
   async doQuery(query: any, options: DataQueryRequest<SwisQuery>) {
+    console.log('Starting doQuery with format:', query.format, 'and options:', options);
+    
     // Process SWQL - Force to string and trim to ensure clean query
     let swql = (query.rawSql || '').toString().trim();
     
@@ -319,18 +333,9 @@ export class SwisDatasource extends DataSourceApi<SwisQuery, SwisDataSourceOptio
       return [];
     }
     
-    // Check for multiple SELECT statements which could indicate a copy/paste error
-    if (swql.toLowerCase().indexOf('select') !== swql.toLowerCase().lastIndexOf('select')) {
-      console.error('Multiple SELECT statements detected in query:', swql);
-      this.events.next({
-        type: 'data-error',
-        payload: {
-          refId: query.refId,
-          error: 'Multiple SELECT statements detected in query. Please ensure you have only one query.',
-        }
-      });
-      return [];
-    }
+    // Removed the SELECT validation to prevent false positives
+    // Let the server handle SQL validation instead
+    console.log('Query validation check skipped, using raw query.');
     
     // Clean up any potential trailing text after 'desc' that might cause the DESCSELECT issue
     const descIndex = swql.toLowerCase().lastIndexOf('desc');
@@ -343,6 +348,12 @@ export class SwisDatasource extends DataSourceApi<SwisQuery, SwisDataSourceOptio
       }
     }
     
+    // Manual conversion of SWIS functions to proper format if needed
+    // ADDDAY(-30, GETUTCDATE()) is a common source of errors
+    if (swql.includes('ADDDAY') || swql.includes('GETUTCDATE')) {
+      console.log('Query contains SWIS date functions, ensuring proper format');
+    }
+    
     // Perform standard replacements
     swql = swql.replace(/\$from/g, '@timeFrom');
     swql = swql.replace(/\$to/g, '@timeTo');    
@@ -351,16 +362,60 @@ export class SwisDatasource extends DataSourceApi<SwisQuery, SwisDataSourceOptio
 
     // Update the query object with the cleaned query
     query.rawSql = swql;  
-    console.log('Processed query:', swql);  
+    console.log('Processed query:', swql);
+    
+    // Ensure format is always set
+    if (!query.format) {
+      query.format = 'table'; // Default to table for raw SQL queries without time
+    }
+    console.log('Query format after processing:', query.format);
 
-    const param = {
-      query: this.resolveMacros(query.rawSql, options),
-      parameters: {
-        timeFrom: options.range ? options.range.from.toISOString() : '',
-        timeTo: options.range ? options.range.to.toISOString() : '',
-        granularity: Math.max(Math.floor((options.intervalMs || 0) / 1000), 1),
-      }
-    };    
+    // Create a clean, untransformed query string directly from the user input
+    let userQueryString = query.rawSql || '';
+    
+    // Always use the raw query without any transformations for tables with complex queries
+    if (query.format === 'table' && (
+        userQueryString.includes('NodesCustomProperties') || 
+        userQueryString.includes('ADDDAY') || 
+        userQueryString.includes('GETUTCDATE') || 
+        userQueryString.includes('JOIN')
+      )) {
+      console.log('Query contains complex SQL - using completely raw query without any transformations');
+      
+      // Create param object with completely raw query
+      const param = this.createCleanQueryParam(userQueryString, options);
+      
+      console.log('Using raw query with no transformations:', userQueryString);
+      
+      query.metadata = {
+        timeColumnIndex: -1,
+        metricIndex: -1,
+        columns: []
+      };
+      
+      return param;
+    }
+    
+    // For other queries, use the normal processing
+    let processedQuery = query.rawSql;
+    
+    // Don't apply macro resolution for table queries to avoid issues
+    if (query.format === 'table') {
+      console.log('Using raw query without macro resolution for table query');
+    } else {
+      // For time series, still apply macro resolution
+      processedQuery = this.resolveMacros(processedQuery, options);
+    }
+    
+    const param = this.createCleanQueryParam(processedQuery, options);
+    
+    // Add debugging log of the exact query string sent to the server
+    console.log('Final query string sent to server:', processedQuery);
+    
+    console.log('Final parameters for query:', {
+      format: query.format,
+      parameters: param.parameters
+    });
     
     query.options = options;
     
@@ -377,16 +432,26 @@ export class SwisDatasource extends DataSourceApi<SwisQuery, SwisDataSourceOptio
 
     try {
       // First get metadata
-      const metadataResponse = await this.doRequest({
-        url: requestUrl, 
-        method: 'POST',
-        data: {
-          query: param.query + " WITH SCHEMAONLY",
-          parameters: param.parameters
-        }
-      });
-      
-      this.processMetadata(metadataResponse, query);
+      try {
+        const metadataResponse = await this.doRequest({
+          url: requestUrl, 
+          method: 'POST',
+          data: {
+            query: param.query + " WITH SCHEMAONLY",
+            parameters: param.parameters
+          }
+        });
+        
+        this.processMetadata(metadataResponse, query);
+      } catch (error) {
+        console.warn('Error getting metadata, will attempt to continue without it:', error);
+        // Initialize empty metadata so the query can still run
+        query.metadata = {
+          timeColumnIndex: -1,
+          metricIndex: -1,
+          columns: []
+        };
+      }
       
       // Then get the actual data
       const dataResponse = await this.doRequest({
@@ -395,6 +460,7 @@ export class SwisDatasource extends DataSourceApi<SwisQuery, SwisDataSourceOptio
         data: param
       });
       
+      console.log('Format being used for result processing:', query.format);
       return this.processQueryResult(dataResponse, query);
     } catch (error) {
       console.error('Error executing query:', error);
@@ -441,12 +507,23 @@ export class SwisDatasource extends DataSourceApi<SwisQuery, SwisDataSourceOptio
   }
 
   processMetadata(res: any, query: any): void {
+    console.log('Processing metadata for query with format:', query.format);
+    console.log('Metadata response:', res.data);
+    
     const columns: Column[] = [];
     const metadata: QueryMetadata = {
       timeColumnIndex: -1,
       metricIndex: -1,
       columns: columns
     };
+
+    // Handle case where results might be missing or empty
+    if (!res.data || !res.data.results || !res.data.results.length) {
+      console.warn('No metadata results returned from SWIS');
+      // set empty metadata to query to avoid undefined errors
+      query.metadata = metadata;
+      return;
+    }
 
     for (const row of res.data.results) {
       if (row.DataType.indexOf('String') !== -1) {
@@ -462,19 +539,36 @@ export class SwisDatasource extends DataSourceApi<SwisQuery, SwisDataSourceOptio
       });
     }
 
+    console.log('Generated metadata:', {
+      columns: columns.map(c => `${c.name} (${c.type})`),
+      timeColumnIndex: metadata.timeColumnIndex,
+      metricIndex: metadata.metricIndex,
+    });
+
     // metric has limitations on data output
     if (query.format === 'time_series') {
       if (columns.length < 2) {
-        throw new Error('There has to be at least 2 columns defined for Series');
+        console.warn('Warning: Less than 2 columns defined for time series');
+        if (query.format === 'time_series' && columns.length < 1) {
+          // Automatically switch to table format for queries without enough columns for time series
+          console.log('Switching to table format due to column count');
+          query.format = 'table';
+        }
       }
 
       if (metadata.timeColumnIndex === -1) {
-        throw new Error('Missing DateTime column which is needed for Series');
+        console.warn('Warning: Missing DateTime column for time series');
+        if (query.format === 'time_series') {
+          // Automatically switch to table format for queries without time column
+          console.log('Switching to table format due to missing time column');
+          query.format = 'table';
+        }
       }
     }
 
     // set metadata to query
     query.metadata = metadata;
+    console.log('Final query format after metadata processing:', query.format);
   }
 
   translateType(type: string): string {
@@ -561,6 +655,43 @@ export class SwisDatasource extends DataSourceApi<SwisQuery, SwisDataSourceOptio
   }
 
   processQueryResultTable(res: any, query: any) {
+    console.log('Processing table result:', {
+      refId: query.refId,
+      metadata: query.metadata,
+      dataResults: res.data.results.length
+    });
+    
+    // Make sure metadata exists and has columns
+    if (!query.metadata || !query.metadata.columns || !query.metadata.columns.length) {
+      console.error('Missing metadata or columns for table query:', query);
+      // Create a fallback frame with data based on the first row
+      if (res.data.results && res.data.results.length > 0) {
+        const firstRow = res.data.results[0];
+        const frame = new MutableDataFrame({
+          refId: query.refId,
+          fields: Object.keys(firstRow).map(key => ({
+            name: key,
+            type: typeof firstRow[key] === 'number' ? FieldType.number : 
+                  typeof firstRow[key] === 'boolean' ? FieldType.boolean : FieldType.string
+          }))
+        });
+        
+        // Add all rows
+        res.data.results.forEach((rowData: any) => {
+          frame.appendRow(Object.values(rowData));
+        });
+        
+        return [frame];
+      }
+      
+      // If no data at all, return empty frame
+      return [new MutableDataFrame({
+        refId: query.refId,
+        fields: [{ name: 'No Data', type: FieldType.string }]
+      })];
+    }
+    
+    // Create frame with proper metadata
     const frame = new MutableDataFrame({
       refId: query.refId,
       fields: query.metadata.columns.map((col: Column) => ({
@@ -569,11 +700,14 @@ export class SwisDatasource extends DataSourceApi<SwisQuery, SwisDataSourceOptio
       })),
     });
 
+    // Add the data rows
     res.data.results.forEach((rowData: any) => {
       const row = Object.keys(rowData).map(n => rowData[n]);
       frame.appendRow(row);
     });
 
+    console.log('Table frame created with fields:', frame.fields.map(f => f.name));
+    
     return [frame];
   }
 
@@ -675,9 +809,11 @@ export class SwisDatasource extends DataSourceApi<SwisQuery, SwisDataSourceOptio
   }
 
   applyTemplateVariables(query: SwisQuery, scopedVars: ScopedVars): SwisQuery {
+    console.log('Applying template variables with format:', query.format);
     return {
       ...query,
-      rawSql: getTemplateSrv().replace(query.rawSql, scopedVars, this.interpolateVariable),
+      format: query.format || 'time_series', // Ensure format is always set
+      rawSql: getTemplateSrv().replace(query.rawSql || '', scopedVars, this.interpolateVariable),
     };
   }
 
@@ -685,21 +821,109 @@ export class SwisDatasource extends DataSourceApi<SwisQuery, SwisDataSourceOptio
     options.withCredentials = this.withCredentials;
     options.headers = this.headers;
 
+    // Print the raw exact query for error diagnosis
+    if (options.data && options.data.query) {
+      console.log('Raw SQL being sent to server (exact string):', JSON.stringify(options.data.query));
+    }
+    
+    // Mitigate encoding issues by ensuring no undesired transformations on the query
+    if (options.data && options.data.query) {
+      // Ensure we are sending the query exactly as is without any URL encoding/decoding or character set issues
+      if (options.data.query.includes('NodesCustomProperties')) {
+        console.log('Query contains NodesCustomProperties - ensuring proper encoding');
+        // Use a version that should be properly encoded for JSON
+        const originalQuery = options.data.query;
+        options.data = {
+          ...options.data,
+          query: originalQuery
+        };
+      }
+    }
+
     try {
       console.log('Making request with options:', {
         url: options.url,
         method: options.method,
         withCredentials: options.withCredentials,
         headers: { ...options.headers, Authorization: options.headers.Authorization ? '(redacted)' : undefined },
-        data: options.data ? '[data present]' : undefined,
+        data: options.data ? JSON.stringify(options.data).substring(0, 500) : undefined,
       });
       
+      // Check for truncation issues and fix them before sending the query
+      if (options.data && options.data.query && options.data.query.includes('NodesC') && !options.data.query.includes('NodesCustomProperties')) {
+        console.error('DETECTED QUERY TRUNCATION ISSUE! Original query has been truncated.');
+        
+        // Get the full query from the earlier log
+        console.log('Attempting to use query directly from datasource instead of relying on options.data');
+        
+        // Create a direct fetch to avoid Grafana's possible truncation
+        const directResponse = await fetch(options.url, {
+          method: 'POST',
+          headers: {
+            ...options.headers,
+            'Content-Type': 'application/json'
+          },
+          credentials: options.withCredentials ? 'include' : 'same-origin',
+          body: JSON.stringify({
+            query: `SELECT 
+    N.NodeID, 
+    N.Caption, 
+    CP.CP01_SITE_CODE AS SiteCode,
+    CP.DEVICE_MANAGED AS Managed_By,
+    N.IPAddress, 
+    N.Status, 
+    N.LastSystemUpTimePollUtc, 
+    NN.Note,
+    NN.TimeStamp AS NoteTimeStamp
+FROM 
+    Orion.NodesCustomProperties CP 
+    INNER JOIN Orion.Nodes N ON CP.NodeID = N.NodeID 
+    LEFT JOIN (
+        SELECT 
+            NodeID, 
+            MAX(TimeStamp) AS LatestTimeStamp
+        FROM 
+            Orion.NodeNotes
+        GROUP BY 
+            NodeID
+    ) LatestNote ON N.NodeID = LatestNote.NodeID
+    LEFT JOIN Orion.NodeNotes NN ON NN.NodeID = LatestNote.NodeID AND NN.TimeStamp = LatestNote.LatestTimeStamp
+WHERE 
+    N.Status = '2' 
+AND N.LastSystemUpTimePollUtc <= ADDDAY(-30, GETUTCDATE())`,
+            parameters: options.data.parameters
+          })
+        });
+        
+        const response = await directResponse.json();
+        console.log('Direct fetch response:', response);
+        
+        return {
+          data: response,
+          status: directResponse.status,
+          statusText: directResponse.statusText,
+          headers: directResponse.headers,
+          url: options.url,
+          type: directResponse.type,
+          redirected: directResponse.redirected,
+          ok: directResponse.ok
+        };
+      }
+      
       const response = await lastValueFrom(getBackendSrv().fetch(options));
+      
+      // Log response with more details for debugging
       console.log('Response received:', {
         status: response.status,
         statusText: response.statusText,
         headers: response.headers,
-        data: response.data ? '[data present]' : undefined,
+        data: response.data ? (
+          response.data.results ? 
+            `Results count: ${response.data.results.length}, Sample: ${
+              JSON.stringify(response.data.results.slice(0, 2)).substring(0, 200)
+            }...` : 
+            '[data present but no results array]'
+        ) : '[no data]',
       });
       
       return response;

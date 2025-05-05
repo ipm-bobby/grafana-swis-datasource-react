@@ -15,6 +15,20 @@ export const defaultQuery: Partial<SwisQuery> = {
   rawSql: '' // Empty by default so users can enter their own query
 };
 
+// Helper function to create default table query
+export const getDefaultTableQuery = (): Partial<SwisQuery> => {
+  return {
+    format: 'table',
+    rawSql: `SELECT
+  n.Caption,
+  n.IP_Address,
+  n.Status,
+  n.DetailsUrl
+FROM Orion.Nodes n
+ORDER BY n.Caption`
+  };
+};
+
 export interface SwisDataSourceOptions extends DataSourceJsonData {
   url?: string;
   // username removed as we're using only HTTP Basic Auth
