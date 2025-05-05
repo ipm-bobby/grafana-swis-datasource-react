@@ -8,7 +8,7 @@
   "alerting": true,
   "backend": false,
   "info": {
-    "description": "DataSource plugin for SolarWinds via SWIS HTTP REST endpoint (v1.0.21)",
+    "description": "DataSource plugin for SolarWinds via SWIS HTTP REST endpoint",
     "author": {
       "name": "Roberto Di Giorgio"
     },
@@ -22,8 +22,8 @@
       {"name": "License", "url": "https://github.com/ipm-bobby/grafana-swis-datasource-react/blob/master/LICENSE"}
     ],
     "screenshots": [],
-    "version": "1.0.21",
-    "updated": "2025-05-06"
+    "version": "1.0.0",
+    "updated": "2025-04-24"
   },
   "dependencies": {
     "grafanaDependency": ">=10.0.0",

@@ -47,7 +47,10 @@ const config = async (env): Promise<Configuration> => {
 
     devtool: env.production ? 'source-map' : 'eval-source-map',
 
-    entry: await getEntries(),
+    entry: {
+      module: path.join(process.cwd(), SOURCE_DIR, 'module.ts'),
+      datasource: path.join(process.cwd(), SOURCE_DIR, 'datasource.ts'),
+    },
 
     externals: [
       // Required for dynamic publicPath resolution
@@ -211,6 +214,8 @@ const config = async (env): Promise<Configuration> => {
           { from: 'libs/**/*', to: '.', noErrorOnMissing: true },
           { from: 'static/**/*', to: '.', noErrorOnMissing: true },
           { from: '**/query_help.md', to: '.', noErrorOnMissing: true },
+          { from: '../src/**/*.css', to: 'css/[name][ext]', noErrorOnMissing: true },
+          { from: '../src/**/*.html', to: 'partials/[name][ext]', noErrorOnMissing: true },
         ],
       }),
       // Replace certain template-variables in the README and plugin.json

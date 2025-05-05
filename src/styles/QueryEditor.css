@@ -1,14 +1,129 @@
-.swis-query-editor-help {
-  margin-top: 10px;
-  margin-bottom: 10px;
+.query-keyword {
+  width: 75px;
 }
 
-.swis-code-editor {
-  margin-bottom: 10px;
+.gf-form-inline {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 4px;
+  width: 100%;
+  min-width: 500px; /* Minimum width for the editor container */
 }
 
-.swis-query-error {
-  color: #e24d42;
-  margin-top: 10px;
-  margin-bottom: 10px;
+.gf-form--grow {
+  flex-grow: 1;
+  margin-right: 2px;
+  width: 100%;
+  min-width: 500px;
+}
+
+/* Force editor to take full width */
+.monaco-editor, 
+.monaco-editor-background, 
+.monaco-editor .inputarea.ime-input,
+.monaco-editor .margin,
+.monaco-editor .editor-scrollable {
+  width: 100% !important;
+  min-width: 500px !important;
+  min-height: 200px !important;
+}
+
+/* Make sure editor is editable */
+.monaco-editor .inputarea {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  z-index: 10 !important;
+}
+
+/* Additional width fixes for Monaco components */
+.monaco-editor .overflow-guard {
+  width: 100% !important;
+  min-width: 500px !important;
+}
+
+/* SQL Editor highlights */
+textarea {
+  tab-size: 2;
+}
+
+/* Customize textarea for SQL-like styling */
+.sql-editor-wrapper textarea {
+  background-color: #111;
+  color: #ddd;
+  line-height: 1.5;
+  font-family: 'Courier New', monospace !important;
+  font-weight: 400;
+  overflow: auto !important;
+  white-space: pre !important;
+  word-wrap: normal !important;
+}
+
+/* SQL Syntax Highlighting attempt with CSS - not as good as a real editor */
+.sql-editor-wrapper textarea::selection {
+  background: rgba(51, 153, 255, 0.5);
+}
+
+/* Can't do real syntax highlighting in a textarea, 
+   but we can ensure the dark theme is consistent */
+.sql-editor-wrapper textarea:focus {
+  outline: 1px solid #666;
+  box-shadow: 0 0 2px 1px rgba(30, 140, 190, 0.8);
+}
+
+/* Force scrollbars to show */
+.sql-editor-wrapper textarea::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.sql-editor-wrapper textarea::-webkit-scrollbar-track {
+  background: #222;
+}
+
+.sql-editor-wrapper textarea::-webkit-scrollbar-thumb {
+  background: #555;
+  border-radius: 5px;
+}
+
+.sql-editor-wrapper textarea::-webkit-scrollbar-thumb:hover {
+  background: #777;
+}
+
+.gf-form-pre {
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+  padding: 10px;
+  min-height: 50px;
+  margin: 10px 0;
+  width: 100%;
+  max-height: 200px;
+  overflow: auto;
+}
+
+.swis-help {
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+
+.swis-meta {
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+
+.swis-button-row {
+  margin-top: 8px;
+  margin-bottom: 4px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+.swis-button-row button {
+  margin-right: 8px;
+}
+
+.swis-error {
+  margin-top: 8px;
 }

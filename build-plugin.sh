@@ -2,35 +2,42 @@
 
 # Production build script for SolarWinds SWIS React DataSource plugin
 PLUGIN_ID="solarwinds-swis-react-datasource"
+GRAFANA_PLUGINS_DIR="$HOME/grafana/plugins"
+
+# Create Grafana plugins directory if it doesn't exist
+mkdir -p "$GRAFANA_PLUGINS_DIR/$PLUGIN_ID"
 
 # Clean everything
-rm -rf "$PLUGIN_ID" dist "$PLUGIN_ID.zip"
+rm -rf "dist" "$PLUGIN_ID.zip"
+rm -rf "$GRAFANA_PLUGINS_DIR/$PLUGIN_ID"/*
 
-# Build plugin and prepare files
+# Build the plugin
 echo "Building plugin..."
-node build.js
+npm run build
 
-# Create clean plugin directory
-echo "Creating plugin directory structure..."
-mkdir -p "$PLUGIN_ID/img"
-cp dist/plugin.json dist/module.js dist/README.md dist/LICENSE "$PLUGIN_ID/"
-cp dist/img/solarwinds-icon.svg "$PLUGIN_ID/img/"
+# Check if build succeeded
+if [ ! -d "dist" ]; then
+  echo "❌ Build failed. Check for errors above."
+  exit 1
+fi
 
-# Create zip with just this directory
-echo "Creating production zip file..."
-cd "$PLUGIN_ID"
+# Create zip file for distribution
+echo "Creating zip file for distribution..."
+cd dist
 zip -r "../$PLUGIN_ID.zip" .
 cd ..
 
-# Remove temporary files
-rm -rf "$PLUGIN_ID" dist
+# Copy to Grafana plugins directory
+echo "Copying to Grafana plugins directory..."
+cp -r dist/* "$GRAFANA_PLUGINS_DIR/$PLUGIN_ID/"
 
 echo ""
-echo "✅ Production build completed: $PLUGIN_ID.zip"
+echo "✅ Build completed successfully"
+echo "✅ Plugin copied to: $GRAFANA_PLUGINS_DIR/$PLUGIN_ID/"
+echo "✅ Plugin zip created: $PLUGIN_ID.zip"
 echo ""
 echo "Installation instructions:"
-echo "1. Extract to /grafana/data/plugins/$PLUGIN_ID/"
-echo "2. Set: GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=$PLUGIN_ID"
-echo "3. Set permissions: chown -R grafana:grafana /grafana/data/plugins/$PLUGIN_ID/"
-echo "4. Restart Grafana"
+echo "1. Add to Grafana configuration:"
+echo "   GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=$PLUGIN_ID"
+echo "2. Restart Grafana server"
 echo ""

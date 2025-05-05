@@ -12,16 +12,20 @@ export interface QueryMeta {
 
 export const defaultQuery: Partial<SwisQuery> = {
   format: 'time_series',
-  rawSql: '' // Empty by default so users can enter their own query
+  rawSql: `SELECT TOP 5
+     LastSync, 
+     Caption,
+     CPULoad, 
+     ResponseTime 
+FROM
+     Orion.Nodes`
 };
 
 export interface SwisDataSourceOptions extends DataSourceJsonData {
   url?: string;
-  // username removed as we're using only HTTP Basic Auth
 }
 
 export interface SwisSecureJsonData {
-  // Using only HTTP Basic Auth now
   basicAuth?: string;
 }
 
