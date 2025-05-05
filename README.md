@@ -46,6 +46,34 @@ A Grafana datasource plugin for querying SolarWinds data using SWQL via the SWIS
 4. Install to your local Grafana (optional): `bash build-plugin.sh --install`
 5. The plugin ZIP will be created in the project directory
 
+### Signing the Plugin
+
+To sign the plugin for official distribution or for use in Grafana Cloud:
+
+1. Create a Grafana Cloud Access Policy Token with the `plugins:write` scope:
+   - Go to [Grafana.com](https://grafana.com/auth/sign-in)
+   - Navigate to My Account → Security → Access Policies
+   - Create a new token with the plugins:write scope
+
+2. Export the token as an environment variable:
+   ```bash
+   export GRAFANA_ACCESS_POLICY_TOKEN=your-token-here
+   ```
+
+3. Build and sign the plugin:
+   ```bash
+   bash build-plugin.sh --sign
+   ```
+
+4. For private plugins (non-public distribution), specify the root URLs:
+   ```bash
+   bash build-plugin.sh --sign --root-urls=https://your-grafana-instance.com
+   ```
+
+5. After signing, the plugin can be installed without enabling unsigned plugins in Grafana.
+
+For more details, see the [Grafana Plugin Signing documentation](https://grafana.com/developers/plugin-tools/publish-a-plugin/sign-a-plugin)
+
 ## Configuration
 
 1. Add a new datasource in Grafana and select "SolarWinds SWIS React DataSource"
