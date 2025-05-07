@@ -337,14 +337,25 @@ export class SwisDatasource extends DataSourceApi<SwisQuery, SwisDataSourceOptio
     // Let the server handle SQL validation instead
     console.log('Query validation check skipped, using raw query.');
     
-    // Clean up any potential trailing text after 'desc' that might cause the DESCSELECT issue
+    // Handle DESC keyword correctly - only truncate if it's the final DESC SELECT issue
+    // But don't truncate if it's part of a valid query with ORDER BY or WHERE clause
     const descIndex = swql.toLowerCase().lastIndexOf('desc');
     if (descIndex > 0) {
       // Get everything after DESC to see if there's any content
       const afterDesc = swql.substring(descIndex + 4).trim();
-      if (afterDesc.length > 0) {
+      // Only truncate if it's not a valid part of the query (ORDER BY, WHERE, etc.)
+      const isValidSuffix = afterDesc.toLowerCase().includes('order by') || 
+                           afterDesc.toLowerCase().includes('where') ||
+                           afterDesc.toLowerCase().includes('and') ||
+                           afterDesc.toLowerCase().includes('inner join') ||
+                           afterDesc.toLowerCase().includes('left join') ||
+                           afterDesc.toLowerCase().includes('on');
+      
+      if (afterDesc.length > 0 && !isValidSuffix) {
         console.warn('Found content after DESC keyword, truncating:', afterDesc);
         swql = swql.substring(0, descIndex + 4);
+      } else {
+        console.log('Found content after DESC but it appears to be valid query syntax, not truncating');
       }
     }
     
@@ -525,18 +536,58 @@ export class SwisDatasource extends DataSourceApi<SwisQuery, SwisDataSourceOptio
       return;
     }
 
+    // First pass: Identify DateTime columns
     for (const row of res.data.results) {
-      if (row.DataType.indexOf('String') !== -1) {
-        metadata.metricIndex = row.Index;
-      } else if (row.DataType.indexOf('DateTime') !== -1) {
+      // Log more details for debugging
+      console.log(`Column ${row.Index}: ${row.Alias}, Type: ${row.DataType}`);
+      
+      if (row.DataType.indexOf('DateTime') !== -1) {
         metadata.timeColumnIndex = row.Index;
-      }      
-
+        console.log(`Found DateTime column: ${row.Alias} at index ${row.Index}`);
+      }
+      
       columns.push({
         index: row.Index,
         name: row.Alias,
         type: this.translateType(row.DataType)
       });
+    }
+    
+    // Second pass: If no DateTime found, try to identify by common time column names
+    if (metadata.timeColumnIndex === -1) {
+      console.log('No DateTime columns found by type - trying to identify by name');
+      
+      const timeColumnNames = ['time', 'timestamp', 'date', 'datetime', 'observationtimestamp'];
+      for (const col of columns) {
+        if (timeColumnNames.includes(col.name.toLowerCase())) {
+          metadata.timeColumnIndex = col.index;
+          console.log(`Identified time column by name: ${col.name} at index ${col.index}`);
+          break;
+        }
+      }
+    }
+    
+    // Third pass: Find a metric column (string column) for series names
+    // Only set metricIndex if we don't already have one and the current column looks like a label
+    for (const row of res.data.results) {
+      if (row.DataType.indexOf('String') !== -1) {
+        const potentialMetricColumn = row.Alias.toLowerCase();
+        const isLikelyMetric = potentialMetricColumn.includes('name') || 
+                              potentialMetricColumn.includes('metric') ||
+                              potentialMetricColumn.includes('label') ||
+                              potentialMetricColumn.includes('key') ||
+                              potentialMetricColumn.includes('caption') || 
+                              potentialMetricColumn.includes('id');
+                              
+        if (isLikelyMetric) {
+          console.log(`Found likely metric name column: ${row.Alias} at index ${row.Index}`);
+          metadata.metricIndex = row.Index;
+          break;
+        } else if (metadata.metricIndex === -1) {
+          // If we haven't found a better match, use this String column
+          metadata.metricIndex = row.Index;
+        }
+      }
     }
 
     console.log('Generated metadata:', {
@@ -545,12 +596,12 @@ export class SwisDatasource extends DataSourceApi<SwisQuery, SwisDataSourceOptio
       metricIndex: metadata.metricIndex,
     });
 
-    // metric has limitations on data output
+    // For time series, ensure we have appropriate columns
     if (query.format === 'time_series') {
       if (columns.length < 2) {
         console.warn('Warning: Less than 2 columns defined for time series');
-        if (query.format === 'time_series' && columns.length < 1) {
-          // Automatically switch to table format for queries without enough columns for time series
+        // Automatically switch to table format for queries without enough columns for time series
+        if (columns.length < 1) {
           console.log('Switching to table format due to column count');
           query.format = 'table';
         }
@@ -558,8 +609,18 @@ export class SwisDatasource extends DataSourceApi<SwisQuery, SwisDataSourceOptio
 
       if (metadata.timeColumnIndex === -1) {
         console.warn('Warning: Missing DateTime column for time series');
-        if (query.format === 'time_series') {
-          // Automatically switch to table format for queries without time column
+        
+        // Check if the query text contains time-related keywords
+        const lowerQuery = (query.rawSql || '').toLowerCase();
+        const hasTimeReference = lowerQuery.includes('time') || 
+                               lowerQuery.includes('timestamp') || 
+                               lowerQuery.includes('date') ||
+                               lowerQuery.includes('observationtimestamp');
+                               
+        if (hasTimeReference) {
+          console.log('Query mentions time fields but metadata doesn\'t show them. Will attempt to find at runtime.');
+        } else {
+          // No time references in query - switch to table
           console.log('Switching to table format due to missing time column');
           query.format = 'table';
         }
@@ -711,7 +772,13 @@ export class SwisDatasource extends DataSourceApi<SwisQuery, SwisDataSourceOptio
     return [frame];
   }
 
-  correctTime(dtString: string): number {
+  correctTime(dtString: string | undefined): number {
+    // Handle undefined or null value
+    if (!dtString) {
+      console.warn('Invalid time value received (undefined or null)');
+      return 0; // Return epoch time as a fallback
+    }
+    
     // SWIS sometimes return time including time zone 02:00:34.675+3:00 instead of pure UTC      
     let dtZoneIndex = dtString.indexOf('+');            
     if (dtZoneIndex !== -1) {        
@@ -720,8 +787,14 @@ export class SwisDatasource extends DataSourceApi<SwisQuery, SwisDataSourceOptio
     else if (dtString.lastIndexOf('Z') !== dtString.length-1) {
       dtString += 'Z';
     }
-      
-    return Date.parse(dtString);
+    
+    const parsedDate = Date.parse(dtString);
+    if (isNaN(parsedDate)) {
+      console.warn(`Invalid date format received: ${dtString}`);
+      return 0; // Return epoch time as a fallback
+    }
+    
+    return parsedDate;
   }
 
   processQueryResultMetric(res: any, query: any) {
@@ -729,27 +802,61 @@ export class SwisDatasource extends DataSourceApi<SwisQuery, SwisDataSourceOptio
     const frames: MutableDataFrame[] = [];
     const series: Record<string, MutableDataFrame> = {};
 
+    // Check if we have valid metadata and a time column
+    if (!metadata || metadata.timeColumnIndex === -1 || metadata.timeColumnIndex === undefined) {
+      console.warn('Missing time column index in metadata - attempting to identify one or use fallback');
+      
+      // If we have data but no time column index, attempt to find one
+      if (res.data && res.data.results && res.data.results.length > 0 && metadata.columns) {
+        // Look for columns with common time names
+        const timeColumnNames = ['time', 'timestamp', 'date', 'datetime', 'observationtimestamp'];
+        for (let i = 0; i < metadata.columns.length; i++) {
+          const columnName = metadata.columns[i].name.toLowerCase();
+          if (timeColumnNames.includes(columnName)) {
+            console.log(`Found potential time column: ${metadata.columns[i].name} at index ${i}`);
+            metadata.timeColumnIndex = i;
+            break;
+          }
+        }
+      }
+      
+      // If we still don't have a time column, use table format instead
+      if (metadata.timeColumnIndex === -1 || metadata.timeColumnIndex === undefined) {
+        console.warn('No time column found, falling back to table format');
+        return this.processQueryResultTable(res, query);
+      }
+    }
+
+    // Process the data as a time series
     for (const rowData of res.data.results) {
       const row = Object.keys(rowData).map(n => rowData[n]);
+      // Handle potentially undefined timeColumnIndex
       const date = this.correctTime(row[metadata.timeColumnIndex]);
       
       for (let i = 0; i < metadata.columns.length; i++) {
+        // Skip time column and metric name column
         if (i === metadata.timeColumnIndex || i === metadata.metricIndex) {
           continue;
         }
 
         let serieName = '';
 
+        // Use the metric column if available for naming
         if (metadata.metricIndex !== -1) {
-          serieName = row[metadata.metricIndex];
+          serieName = String(row[metadata.metricIndex] || '');
         }
 
+        // Add column name to series name if needed
         if (metadata.columns.length > 3 || serieName === '') {
           if (serieName !== '') {
             serieName += '-';
           }
-
           serieName += metadata.columns[i].name;
+        }
+
+        // Ensure we have a valid series name
+        if (!serieName) {
+          serieName = `Value-${i}`;
         }
 
         let frame = series[serieName];
@@ -770,6 +877,12 @@ export class SwisDatasource extends DataSourceApi<SwisQuery, SwisDataSourceOptio
         const value = row[i];
         frame.appendRow([date, value]);
       }
+    }
+
+    // If we couldn't create any frames, return an empty result or fallback
+    if (frames.length === 0) {
+      console.warn('No time series frames could be created, check query and data format');
+      return this.processQueryResultTable(res, query);
     }
 
     return frames;
