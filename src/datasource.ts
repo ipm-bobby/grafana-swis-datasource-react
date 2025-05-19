@@ -577,7 +577,12 @@ export class SwisDatasource extends DataSourceApi<SwisQuery, SwisDataSourceOptio
                               potentialMetricColumn.includes('label') ||
                               potentialMetricColumn.includes('key') ||
                               potentialMetricColumn.includes('caption') || 
-                              potentialMetricColumn.includes('id');
+                              potentialMetricColumn.includes('id') ||
+                              potentialMetricColumn.includes('interface') ||
+                              potentialMetricColumn.includes('device') ||
+                              potentialMetricColumn.includes('entity') ||
+                              potentialMetricColumn.includes('node') ||
+                              potentialMetricColumn.includes('component');
                               
         if (isLikelyMetric) {
           console.log(`Found likely metric name column: ${row.Alias} at index ${row.Index}`);
@@ -827,55 +832,265 @@ export class SwisDatasource extends DataSourceApi<SwisQuery, SwisDataSourceOptio
       }
     }
 
-    // Process the data as a time series
-    for (const rowData of res.data.results) {
-      const row = Object.keys(rowData).map(n => rowData[n]);
-      // Handle potentially undefined timeColumnIndex
-      const date = this.correctTime(row[metadata.timeColumnIndex]);
-      
+    // Check if we should use a "wide" format with all metrics in a single frame
+    // This is useful for queries where we want to use "Organize fields by name" in Grafana
+    //
+    // Wide format example:
+    // +----------+------------------+--------+----------+
+    // | Time     | Interface        | RECEIVE| TRANSMIT |
+    // +----------+------------------+--------+----------+
+    // | Time1    | Interface1       | val1   | val2     |
+    // | Time2    | Interface1       | val3   | val4     |
+    // | Time1    | Interface2       | val5   | val6     |
+    // +----------+------------------+--------+----------+
+    //
+    // vs. Normal format (separate frames for each metric):
+    // Frame 1:
+    // +----------+--------+
+    // | Time     | Value  |
+    // +----------+--------+
+    // | Time1    | val1   |
+    // | Time2    | val3   |
+    // +----------+--------+
+    // Frame 2:
+    // +----------+--------+
+    // | Time     | Value  |
+    // +----------+--------+
+    // | Time1    | val2   |
+    // | Time2    | val4   |
+    // +----------+--------+
+    // etc.
+    
+    // Look for specific patterns that indicate a query that should use wide format
+    // 1. Queries with a time, an entity name (like Interface), and multiple metrics
+    // 2. Queries with JOIN operations are good candidates
+    const hasJoin = (query.rawSql || '').toLowerCase().includes('join');
+    const hasMultipleMetrics = metadata.columns.length > 3; // time + entity + at least 2 metrics
+    const hasMetricName = metadata.metricIndex !== -1;
+    
+    // Special case: detect traffic monitoring queries (like in_bytes, out_bytes patterns)
+    // This is common in network monitoring with interface traffic metrics
+    const isTrafficQuery = (query.rawSql || '').toLowerCase().includes('totalbytes') || 
+                           (query.rawSql || '').toLowerCase().includes('inbytes') || 
+                           (query.rawSql || '').toLowerCase().includes('outbytes') ||
+                           (query.rawSql || '').toLowerCase().includes('receive') || 
+                           (query.rawSql || '').toLowerCase().includes('transmit');
+                           
+    // Use wide format when we have multiple metrics and either:
+    // - There's a JOIN in the query (usually means we're relating metrics to a dimension)
+    // - We have a labeled metric column (like Interface)
+    // - It's a traffic query (special case)
+    const useWideFormat = hasMultipleMetrics && (hasJoin || hasMetricName || isTrafficQuery);
+    
+    console.log(`Using wide format: ${useWideFormat} (hasMultipleMetrics=${hasMultipleMetrics}, hasJoin=${hasJoin}, hasMetricName=${hasMetricName}, isTrafficQuery=${isTrafficQuery})`);
+
+    if (useWideFormat) {
+      // Create a single frame with multiple fields
+      const frame = new MutableDataFrame({
+        refId: query.refId,
+        fields: [
+          { name: 'Time', type: FieldType.time },
+        ],
+      });
+
+      // Add fields for all columns except time and metric name
+      const valueColumns: number[] = [];
       for (let i = 0; i < metadata.columns.length; i++) {
-        // Skip time column and metric name column
-        if (i === metadata.timeColumnIndex || i === metadata.metricIndex) {
-          continue;
-        }
-
-        let serieName = '';
-
-        // Use the metric column if available for naming
-        if (metadata.metricIndex !== -1) {
-          serieName = String(row[metadata.metricIndex] || '');
-        }
-
-        // Add column name to series name if needed
-        if (metadata.columns.length > 3 || serieName === '') {
-          if (serieName !== '') {
-            serieName += '-';
-          }
-          serieName += metadata.columns[i].name;
-        }
-
-        // Ensure we have a valid series name
-        if (!serieName) {
-          serieName = `Value-${i}`;
-        }
-
-        let frame = series[serieName];
-
-        if (!frame) {
-          frame = new MutableDataFrame({
-            refId: query.refId,
-            name: serieName,
-            fields: [
-              { name: 'Time', type: FieldType.time },
-              { name: 'Value', type: FieldType.number },
-            ],
+        if (i !== metadata.timeColumnIndex && i !== metadata.metricIndex) {
+          // For metric columns like RECEIVE and TRANSMIT, ensure they're treated as numbers
+          // This is critical for Stat panels with sum calculations
+          const columnName = metadata.columns[i].name.toUpperCase();
+          const isNameNumericMetric = columnName.includes('RECEIVE') || 
+                                 columnName.includes('TRANSMIT') ||
+                                 columnName.includes('BYTES') ||
+                                 columnName.includes('SPEED') ||
+                                 columnName.includes('UTIL') ||
+                                 columnName.includes('RATE') ||
+                                 columnName.includes('COUNT');
+                                 
+          // Also check if the field type is already a number type
+          const isTypeNumber = metadata.columns[i].type === FieldType.number;
+          
+          // Combine the checks
+          const isNumericMetric = isNameNumericMetric || isTypeNumber;
+          
+          console.log(`Column ${metadata.columns[i].name} isNumericMetric: ${isNumericMetric}`);
+          
+          frame.addField({
+            name: metadata.columns[i].name,
+            type: isNumericMetric ? FieldType.number : metadata.columns[i].type as FieldType
           });
-          series[serieName] = frame;
-          frames.push(frame);
+          valueColumns.push(i);
         }
+      }
 
-        const value = row[i];
-        frame.appendRow([date, value]);
+      // Directly add rows to the frame - simpler and more reliable approach
+      // This will keep each row together in its original form
+      for (const rowData of res.data.results) {
+        const row = Object.keys(rowData).map(n => rowData[n]);
+        const date = this.correctTime(row[metadata.timeColumnIndex]);
+        
+        // For each row, create an array with time first, then all value columns
+        const rowValues = [date];
+        
+        for (const colIndex of valueColumns) {
+          // For numeric columns, ensure the value is actually a number
+          const columnName = metadata.columns[colIndex].name.toUpperCase();
+          const isNameNumericMetric = columnName.includes('RECEIVE') || 
+                                 columnName.includes('TRANSMIT') ||
+                                 columnName.includes('BYTES') ||
+                                 columnName.includes('SPEED') ||
+                                 columnName.includes('UTIL') ||
+                                 columnName.includes('RATE') ||
+                                 columnName.includes('COUNT');
+                                 
+          // Also check if the field type is a number type or if the value looks like a number
+          const isTypeNumber = metadata.columns[colIndex].type === FieldType.number;
+          const valueIsNumeric = typeof row[colIndex] === 'number' || 
+                                (typeof row[colIndex] === 'string' && !isNaN(Number(row[colIndex])));
+                                
+          // Combine all checks to determine if we should treat this as a number
+          const isNumericMetric = isNameNumericMetric || isTypeNumber || valueIsNumeric;
+          
+          // Convert to number if it's a numeric metric
+          const value = isNumericMetric ? Number(row[colIndex]) : row[colIndex];
+          rowValues.push(value);
+        }
+        
+        // Add the row to our frame
+        frame.appendRow(rowValues);
+      }
+      
+      // The metric field needs to be handled differently - we reconstruct the frame
+      // with the metric field included as part of each row
+      if (metadata.metricIndex !== -1) {
+        // Create a new frame that includes the metric field
+        const newFrame = new MutableDataFrame({
+          refId: query.refId,
+          fields: [
+            { name: 'Time', type: FieldType.time },
+            { name: metadata.columns[metadata.metricIndex].name, type: FieldType.string },
+            // Add remaining fields
+            ...valueColumns.map(i => {
+              // Ensure numeric metrics are properly identified for Stat panels
+              const columnName = metadata.columns[i].name.toUpperCase();
+              const isNameNumericMetric = columnName.includes('RECEIVE') || 
+                                   columnName.includes('TRANSMIT') ||
+                                   columnName.includes('BYTES') ||
+                                   columnName.includes('SPEED') ||
+                                   columnName.includes('UTIL') ||
+                                   columnName.includes('RATE') ||
+                                   columnName.includes('COUNT');
+                                   
+              // Also check if the field type is already a number type
+              const isTypeNumber = metadata.columns[i].type === FieldType.number;
+              
+              // Combine the checks
+              const isNumericMetric = isNameNumericMetric || isTypeNumber;
+              
+              return {
+                name: metadata.columns[i].name,
+                type: isNumericMetric ? FieldType.number : metadata.columns[i].type as FieldType
+              };
+            })
+          ],
+        });
+        
+        // Add all rows with the metric name included
+        for (const rowData of res.data.results) {
+          const row = Object.keys(rowData).map(n => rowData[n]);
+          const date = this.correctTime(row[metadata.timeColumnIndex]);
+          const metricName = String(row[metadata.metricIndex] || '');
+          
+          const rowValues = [date, metricName];
+          
+          for (const colIndex of valueColumns) {
+            // For numeric columns, ensure the value is actually a number
+            const columnName = metadata.columns[colIndex].name.toUpperCase();
+            const isNameNumericMetric = columnName.includes('RECEIVE') || 
+                                 columnName.includes('TRANSMIT') ||
+                                 columnName.includes('BYTES') ||
+                                 columnName.includes('SPEED') ||
+                                 columnName.includes('UTIL') ||
+                                 columnName.includes('RATE') ||
+                                 columnName.includes('COUNT');
+                                 
+            // Also check if the field type is a number type or if the value looks like a number
+            const isTypeNumber = metadata.columns[colIndex].type === FieldType.number;
+            const valueIsNumeric = typeof row[colIndex] === 'number' || 
+                                  (typeof row[colIndex] === 'string' && !isNaN(Number(row[colIndex])));
+                                  
+            // Combine all checks to determine if we should treat this as a number
+            const isNumericMetric = isNameNumericMetric || isTypeNumber || valueIsNumeric;
+            
+            // Convert to number if it's a numeric metric
+            const value = isNumericMetric ? Number(row[colIndex]) : row[colIndex];
+            rowValues.push(value);
+          }
+          
+          newFrame.appendRow(rowValues);
+        }
+        
+        // Replace the original frame
+        frames.pop(); // Remove the original frame (it was the only one)
+        frames.push(newFrame);
+        console.log(`Reconstructed frame with metric field ${metadata.columns[metadata.metricIndex].name} included`);
+      } else {
+        // Only add the original frame if we didn't replace it
+        frames.push(frame);
+      }
+    } else {
+      // Original implementation for backward compatibility
+      // Process the data as a time series with separate frames
+      for (const rowData of res.data.results) {
+        const row = Object.keys(rowData).map(n => rowData[n]);
+        // Handle potentially undefined timeColumnIndex
+        const date = this.correctTime(row[metadata.timeColumnIndex]);
+        
+        for (let i = 0; i < metadata.columns.length; i++) {
+          // Skip time column and metric name column
+          if (i === metadata.timeColumnIndex || i === metadata.metricIndex) {
+            continue;
+          }
+
+          let serieName = '';
+
+          // Use the metric column if available for naming
+          if (metadata.metricIndex !== -1) {
+            serieName = String(row[metadata.metricIndex] || '');
+          }
+
+          // Add column name to series name if needed
+          if (metadata.columns.length > 3 || serieName === '') {
+            if (serieName !== '') {
+              serieName += '-';
+            }
+            serieName += metadata.columns[i].name;
+          }
+
+          // Ensure we have a valid series name
+          if (!serieName) {
+            serieName = `Value-${i}`;
+          }
+
+          let frame = series[serieName];
+
+          if (!frame) {
+            frame = new MutableDataFrame({
+              refId: query.refId,
+              name: serieName,
+              fields: [
+                { name: 'Time', type: FieldType.time },
+                { name: 'Value', type: FieldType.number },
+              ],
+            });
+            series[serieName] = frame;
+            frames.push(frame);
+          }
+
+          const value = row[i];
+          frame.appendRow([date, value]);
+        }
       }
     }
 
