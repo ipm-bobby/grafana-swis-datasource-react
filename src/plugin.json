@@ -26,8 +26,8 @@
     "screenshots": [
       {"name": "Configuration", "path": "docs/img/datasource_connect.jpg"}
     ],
-    "version": "1.0.0",
-    "updated": "2025-05-06"
+    "version": "1.0.1",
+    "updated": "2025-05-22"
   },
   "dependencies": {
     "grafanaDependency": ">=10.0.0",

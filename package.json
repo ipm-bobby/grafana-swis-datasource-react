@@ -1,6 +1,6 @@
 {
   "name": "datasource-solarwinds-swis",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "DataSource for SolarWinds SWIS HTTP REST endpoint.",
   "scripts": {
     "build": "webpack --env production",

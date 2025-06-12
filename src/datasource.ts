@@ -879,10 +879,45 @@ export class SwisDatasource extends DataSourceApi<SwisQuery, SwisDataSourceOptio
     // Use wide format when we have multiple metrics and either:
     // - There's a JOIN in the query (usually means we're relating metrics to a dimension)
     // - We have a labeled metric column (like Interface)
-    // - It's a traffic query (special case)
-    const useWideFormat = hasMultipleMetrics && (hasJoin || hasMetricName || isTrafficQuery);
+    // - It's a traffic query (special case) BUT NOT when it has a dimension field like "Interface"
     
-    console.log(`Using wide format: ${useWideFormat} (hasMultipleMetrics=${hasMultipleMetrics}, hasJoin=${hasJoin}, hasMetricName=${hasMetricName}, isTrafficQuery=${isTrafficQuery})`);
+    // Check if the query is an interface traffic query that needs to be shown separately
+    const isInterfaceTrafficQuery = isTrafficQuery && 
+                                  ((query.rawSql || '').toLowerCase().includes('interface') || 
+                                   metadata.columns.some(col => col.name.toLowerCase().includes('interface'))) &&
+                                  metadata.metricIndex !== -1;
+    
+    // Check if this query might be used for transformations based on query patterns
+    // Queries with "InTotalBytes/OutTotalBytes" often need wide format for transformations
+    const isTotalBytesQuery = (query.rawSql || '').toLowerCase().includes('totalbytes');
+    
+    // Check if query has other keywords that suggest it needs transformations
+    const needsTransformations = isTotalBytesQuery;
+    
+    // Don't use wide format for normal interface traffic queries
+    // But DO use wide format for queries that likely need transformations
+    const hasTrafficWithInterface = isTrafficQuery && isInterfaceTrafficQuery && !needsTransformations;
+    
+    // Modified logic: Use wide format if it needs transformations
+    const useWideFormat = hasMultipleMetrics && 
+                        (needsTransformations || (!hasTrafficWithInterface && (hasJoin || hasMetricName || isTrafficQuery)));
+    
+    // Add detailed debugging for interface traffic detection
+    const interfaceColumns = metadata.columns
+      .filter(col => col.name.toLowerCase().includes('interface'))
+      .map(col => col.name);
+    
+    console.log(`Format detection: ${JSON.stringify({
+      queryHasInterface: (query.rawSql || '').toLowerCase().includes('interface'),
+      interfaceColumns,
+      isTotalBytesQuery,
+      needsTransformations,
+      metricIndex: metadata.metricIndex,
+      isInterfaceTrafficQuery,
+      hasTrafficWithInterface
+    })}`);
+    
+    console.log(`Using wide format: ${useWideFormat} (hasMultipleMetrics=${hasMultipleMetrics}, hasJoin=${hasJoin}, hasMetricName=${hasMetricName}, isTrafficQuery=${isTrafficQuery}, needsTransformations=${needsTransformations})`);
 
     if (useWideFormat) {
       // Create a single frame with multiple fields
