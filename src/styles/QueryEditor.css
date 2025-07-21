@@ -126,3 +126,29 @@ textarea {
 .swis-error {
   margin-top: 8px;
 }
+
+/* Fix for Grafana's JSON viewer in dashboard settings */
+.monaco-editor .view-lines {
+  top: 0 !important;
+  left: 0 !important;
+}
+
+.monaco-editor .view-line {
+  top: auto !important;
+}
+
+/* Ensure JSON viewer content is visible */
+.monaco-editor .view-lines .view-line span {
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+/* Fix for invisible first lines in Monaco editor */
+.monaco-editor .margin-view-overlays,
+.monaco-editor .view-overlays {
+  z-index: 1 !important;
+}
+
+.monaco-editor .view-zones {
+  z-index: 0 !important;
+}

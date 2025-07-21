@@ -34,6 +34,7 @@ export class SwisDatasource extends DataSourceApi<SwisQuery, SwisDataSourceOptio
   withCredentials: boolean;
   headers: Record<string, string>;
   events: Subject<any>;
+  private originalQueries: Map<string, string> = new Map();
 
   constructor(instanceSettings: DataSourceInstanceSettings<SwisDataSourceOptions>) {
     super(instanceSettings);
@@ -1184,9 +1185,17 @@ export class SwisDatasource extends DataSourceApi<SwisQuery, SwisDataSourceOptio
     options.withCredentials = this.withCredentials;
     options.headers = this.headers;
 
-    // Print the raw exact query for error diagnosis
+    // Store original query before any potential truncation
+    let originalQuery: string | null = null;
+    const queryKey = Date.now().toString() + Math.random().toString(36);
+    
     if (options.data && options.data.query) {
-      console.log('Raw SQL being sent to server (exact string):', JSON.stringify(options.data.query));
+      originalQuery = options.data.query;
+      this.originalQueries.set(queryKey, originalQuery);
+      console.log('Raw SQL being sent to server (exact string):', JSON.stringify(originalQuery));
+      
+      // Store the key in options for later retrieval
+      options.queryKey = queryKey;
     }
     
     // Mitigate encoding issues by ensuring no undesired transformations on the query
@@ -1195,10 +1204,9 @@ export class SwisDatasource extends DataSourceApi<SwisQuery, SwisDataSourceOptio
       if (options.data.query.includes('NodesCustomProperties')) {
         console.log('Query contains NodesCustomProperties - ensuring proper encoding');
         // Use a version that should be properly encoded for JSON
-        const originalQuery = options.data.query;
         options.data = {
           ...options.data,
-          query: originalQuery
+          query: options.data.query
         };
       }
     }
@@ -1216,19 +1224,40 @@ export class SwisDatasource extends DataSourceApi<SwisQuery, SwisDataSourceOptio
       if (options.data && options.data.query && options.data.query.includes('NodesC') && !options.data.query.includes('NodesCustomProperties')) {
         console.error('DETECTED QUERY TRUNCATION ISSUE! Original query has been truncated.');
         
-        // Get the full query from the earlier log
-        console.log('Attempting to use query directly from datasource instead of relying on options.data');
+        // Retrieve the original query from our storage
+        const storedQuery = options.queryKey ? this.originalQueries.get(options.queryKey) : null;
         
-        // Create a direct fetch to avoid Grafana's possible truncation
-        const directResponse = await fetch(options.url, {
-          method: 'POST',
-          headers: {
-            ...options.headers,
-            'Content-Type': 'application/json'
-          },
-          credentials: options.withCredentials ? 'include' : 'same-origin',
-          body: JSON.stringify({
-            query: `SELECT 
+        let directResponse: Response;
+        
+        if (storedQuery) {
+          console.log('Using stored original query to recover from truncation');
+          
+          // Create a direct fetch to avoid Grafana's possible truncation
+          directResponse = await fetch(options.url, {
+            method: 'POST',
+            headers: {
+              ...options.headers,
+              'Content-Type': 'application/json'
+            },
+            credentials: options.withCredentials ? 'include' : 'same-origin',
+            body: JSON.stringify({
+              query: storedQuery,
+              parameters: options.data.parameters
+            })
+          });
+        } else {
+          console.warn('No stored original query found, falling back to hardcoded query');
+          
+          // Fallback to hardcoded query as before
+          directResponse = await fetch(options.url, {
+            method: 'POST',
+            headers: {
+              ...options.headers,
+              'Content-Type': 'application/json'
+            },
+            credentials: options.withCredentials ? 'include' : 'same-origin',
+            body: JSON.stringify({
+              query: `SELECT 
     N.NodeID, 
     N.Caption, 
     CP.CP01_SITE_CODE AS SiteCode,
@@ -1254,12 +1283,18 @@ FROM
 WHERE 
     N.Status = '2' 
 AND N.LastSystemUpTimePollUtc <= ADDDAY(-30, GETUTCDATE())`,
-            parameters: options.data.parameters
-          })
-        });
+              parameters: options.data.parameters
+            })
+          });
+        }
         
         const response = await directResponse.json();
         console.log('Direct fetch response:', response);
+        
+        // Clean up stored query
+        if (options.queryKey) {
+          this.originalQueries.delete(options.queryKey);
+        }
         
         return {
           data: response,
@@ -1274,6 +1309,11 @@ AND N.LastSystemUpTimePollUtc <= ADDDAY(-30, GETUTCDATE())`,
       }
       
       const response = await lastValueFrom(getBackendSrv().fetch(options));
+      
+      // Clean up stored query on successful normal request
+      if (options.queryKey) {
+        this.originalQueries.delete(options.queryKey);
+      }
       
       // Log response with more details for debugging
       console.log('Response received:', {
@@ -1291,6 +1331,11 @@ AND N.LastSystemUpTimePollUtc <= ADDDAY(-30, GETUTCDATE())`,
       
       return response;
     } catch (error: any) {
+      // Clean up stored query on error
+      if (options.queryKey) {
+        this.originalQueries.delete(options.queryKey);
+      }
+      
       console.error('Request failed:', {
         message: error.message,
         status: error.status,
