@@ -81,11 +81,12 @@ export class SwisDatasource extends DataSourceApi<SwisQuery, SwisDataSourceOptio
       const testQuery = 'SELECT Description FROM System.NullEntity';
       console.log('Test query:', testQuery);
       
-      // For proxy mode, we shouldn't append /Query to the URL
-      // since Grafana will handle the proxy URL
+      // For proxy mode, we need to ensure /Query is included in the URL
+      // since SWIS requires the full endpoint path
       let url = '';
       if (this.access === 'proxy') {
-        url = this.url; // In proxy mode, the URL is already configured
+        // In proxy mode, ensure /Query is included if not already present
+        url = this.url.endsWith('/Query') ? this.url : this.url + '/Query';
         console.log('Using proxy mode URL:', url);
       } else {
         // In direct mode, append /Query as before
@@ -434,7 +435,8 @@ export class SwisDatasource extends DataSourceApi<SwisQuery, SwisDataSourceOptio
     // Handle URL differently based on access mode
     let requestUrl = '';
     if (this.access === 'proxy') {
-      requestUrl = this.url; // In proxy mode, the URL is already configured
+      // In proxy mode, ensure /Query is included if not already present
+      requestUrl = this.url.endsWith('/Query') ? this.url : this.url + '/Query';
       console.log('Using proxy mode URL for query:', requestUrl);
     } else {
       // In direct mode, append /Query as before
